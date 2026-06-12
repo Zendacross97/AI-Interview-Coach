@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Service 1: Node.js App
+  interview-app:
+    build: .
+    ports:
+      - "3000:3000"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    # CHANGE 1: Bind your local files live into the Docker environment
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/node_modules # Protects container node_modules from being overwritten
+    command: npm run start
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - BASE_URL=http://localhost:3000
+      - REDIS_URL=redis://redis-cache:6379
+      - DB_PASSWORD=${DB_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - CASHFREE_APP_ID=${CASHFREE_APP_ID}
+      - CASHFREE_SECRET_KEY=${CASHFREE_SECRET_KEY}
+      - BREVO_API_KEY=${BREVO_API_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - BUCKET_NAME=${BUCKET_NAME}
+      - IAM_USER_KEY=${IAM_USER_KEY}
+      - IAM_USER_SECRET=${IAM_USER_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - redis-cache
+
+  # Service 2: Redis Database Engine
+  redis-cache:
+    image: redis:alpine
+    ports:
+      - "6379:6379"

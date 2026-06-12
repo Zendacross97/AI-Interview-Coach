@@ -1,0 +1,287 @@
+body { 
+    font-family: Arial, 
+    sans-serif; margin: 40px; 
+    padding: 20px 10px;
+    background: #f4f6f9; 
+    color: #333; 
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    box-sizing: border-box;
+}
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+.container { 
+    width: 100%;
+    max-width: 650px; 
+    background: white; 
+    padding: 30px; 
+    border-radius: 8px; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+}
+h2 { 
+    color: #2c3e50; 
+}
+.upload-section { 
+    margin-top: 20px; 
+    padding: 20px; 
+    border: 2px dashed #3498db; 
+    border-radius: 6px; 
+    background: #eef7fc; 
+}
+input[type="file"] { 
+    margin-bottom: 15px; 
+}
+button { 
+    background: #3498db; 
+    color: white; border: none; 
+    padding: 10px 15px; 
+    border-radius: 4px; 
+    cursor: pointer; 
+    font-size: 16px; 
+}
+button:hover { 
+    background: #2980b9; 
+}
+#statusMessage { 
+    margin-top: 15px; 
+    font-weight: bold; 
+}
+.success { 
+    color: #27ae60; 
+}
+.error { 
+    color: #c0392b; 
+}
+/* Append onto public/css/interview.css */
+
+.premium-banner {
+    background: linear-gradient(135deg, #f1c40f, #f39c12);
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 6px;
+    margin-bottom: 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+.premium-btn {
+    background: #2c3e50;
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.premium-btn:hover {
+    background: #34495e;
+}
+.config-section {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+.form-group {
+    flex: 1;
+    min-width: 200px;
+    display: flex;
+    flex-direction: column;
+}
+.form-group label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #34495e;
+}
+.form-group select {
+    padding: 8px;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    font-size: 15px;
+}
+#uploadBtn {
+    width: 100%;
+}
+.success-btn {
+    width: 100%;
+    background: #27ae60;
+    font-weight: bold;
+}
+.success-btn:hover {
+    background: #219653;
+}
+.chat-box {
+    border: 1px solid #dcdde1;
+    border-radius: 6px;
+    background: #fafafa;
+    overflow: hidden;
+}
+.chat-log {
+    height: 350px;
+    padding: 15px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.chat-message {
+    padding: 10px 14px;
+    border-radius: 8px;
+    max-width: 80%;
+}
+.ai-msg {
+    background: #eaeded;
+    align-self: flex-start;
+}
+.user-msg {
+    background: #d4efdf;
+    align-self: flex-end;
+    text-align: right;
+}
+.chat-input-area {
+    display: flex;
+    flex-wrap: wrap;
+    border-top: 1px solid #dcdde1;
+    background: #fff;
+}
+.chat-input-area input {
+    flex: 1;
+    min-width: 250px;
+    border: none;
+    padding: 15px;
+    font-size: 15px;
+    outline: none;
+}
+.chat-input-area button {
+    border-radius: 0;
+    padding: 12px 20px;
+    flex-grow: 1;
+}
+.action-section {
+    display: none; /* Controlled dynamically via JS state switches */
+    margin-top: 20px;
+    text-align: center;
+}
+.chat-box {
+    display: none; /* Becomes visible once WebSocket connection resolves successfully */
+    margin-top: 25px;
+    border: 1px solid #dcdde1;
+    border-radius: 6px;
+    background: #fafafa;
+    overflow: hidden;
+}
+.success-btn {
+    background: #27ae60;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    font-weight: bold;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background 0.2s ease;
+}
+.success-btn:hover {
+    background: #219653;
+}
+.danger-btn {
+    background-color: #ff4d4d;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-left: 10px;
+    transition: background 0.3s;
+}
+
+.danger-btn:hover {
+    background-color: #cc0000;
+}
+
+#endSessionBtn {
+    display: none; /* Hidden until session starts */
+}
+.secondary-btn {
+    background-color: #4a5568;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-left: 5px;
+    transition: background 0.2s;
+}
+.secondary-btn:hover {
+    background-color: #2d3748;
+}
+.scorecard-container {
+    display: none;
+    background: #f9f9f9;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+    text-align: center;
+    margin-top: 20px;
+}
+
+.score-grid {
+    display: flex;
+    justify-content: space-around;
+    margin: 20px 0;
+}
+
+.score-card {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    min-width: 120px;
+}
+
+.score-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2ecc71; /* Green color */
+}
+
+.feedback-box {
+    text-align: left;
+    background: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 5px solid #3498db;
+    margin-bottom: 20px;
+}
+
+@media (max-width: 480px) {
+    body {
+        padding: 10px 5px;
+    }
+    
+    .container {
+        padding: 15px; 
+    }
+
+    h2 {
+        font-size: 1.4rem;
+        text-align: center;
+    }
+
+    .premium-banner {
+        flex-direction: column; 
+        gap: 10px;
+        text-align: center;
+    }
+
+    .score-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+}

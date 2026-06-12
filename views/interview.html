@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interview Coach - Dashboard</title>
+    <link rel="stylesheet" href="/css/interview.css">
+    <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="premium-banner" id="premiumBanner">
+            <span>Unlock Unlimited Mock with Premium Plan</span>
+            <button id="renderBtn" class="premium-btn">Upgrade Now</button>
+        </div>
+
+        <h2>Welcome to your AI Interview Session</h2>
+        <p>Configure your preferences and upload your technical resume to start calibration.</p>
+
+        <div class="config-section">
+            <div class="form-group">
+                <label for="roleTypeSelect">Target Job Role:</label>
+                <select id="roleTypeSelect">
+                    <option value="" disabled selected>-- Select Target Role --</option>
+                    <option value="Full Stack Engineer">Full Stack Engineer</option>
+                    <option value="Backend Developer">Backend Developer</option>
+                    <option value="Frontend Developer">Frontend Developer</option>
+                    <option value="DevOps Engineer">DevOps Engineer</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="difficultySelect">Interview Difficulty:</label>
+                <select id="difficultySelect">
+                    <option value="" disabled selected>-- Select Experience Seniority --</option>
+                    <option value="Junior">Junior (0-2 Yrs)</option>
+                    <option value="Mid" selected>Mid-Level (2-5 Yrs)</option>
+                    <option value="Senior/Staff">Senior / Staff (5+ Yrs)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="upload-section">
+            <input type="file" id="resumeInput" accept="application/pdf" title="resume"><br>
+            <button id="uploadBtn">Upload to S3</button>
+            <div id="statusMessage"></div>
+        </div>
+
+        <div class="action-section" id="sessionActionSection" >
+            <button id="startInterviewBtn" class="success-btn">Start Live AI Interview</button>
+        </div>
+
+        <div id="chatBox" class="chat-box">
+            <div id="chatLog" class="chat-log"></div>
+            <div class="chat-input-area">
+                <input type="text" id="chatInput" placeholder="Type your response here...">
+                <button id="micBtn" class="secondary-btn">Speak</button>
+                <button id="sendMsgBtn">Send</button>
+                <button id="endSessionBtn" class="danger-btn">End Session</button>
+            </div>
+        </div>
+        <div id="scorecardSection" class="scorecard-container">
+            <h3>Interview Performance Scorecard</h3>
+            <div class="score-grid">
+                <div class="score-card">
+                    <span class="score-label">Technical Score</span>
+                    <div id="techScoreDisplay" class="score-value">0/10</div>
+                </div>
+                <div class="score-card">
+                    <span class="score-label">Communication Score</span>
+                    <div id="commScoreDisplay" class="score-value">0/10</div>
+                </div>
+            </div>
+            <div class="feedback-box">
+                <h4>AI Feedback Summary</h4>
+                <p id="aiFeedbackDisplay">Processing your feedback...</p>
+            </div>
+            <button onclick="location.reload()" class="secondary-btn">Start New Session</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.8.4/axios.min.js"></script>
+    <script src="/js/interview.js"></script>
+    <script src="/js/cashfreeWeb_self.js"></script>
+</body>
+</html>
