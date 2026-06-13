@@ -12,6 +12,7 @@ services:
       - NODE_ENV=production
       - PORT=5000
       - BASE_URL=http://ai-interview-coach.ap-south-1.elasticbeanstalk.com
+      - MONGODB_URL=${MONGODB_URL}
       - REDIS_URL=${REDIS_URL}
       - DB_PASSWORD=${DB_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}

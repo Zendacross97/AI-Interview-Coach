@@ -15,7 +15,7 @@ jobs:
 
       - name: Generate Deployment Package
         # We zip the project, excluding node_modules and the .github folder itself
-        run: zip -r deploy.zip . -x "*.git*" "node_modules/*" ".github/*"
+        run: zip -r deploy.zip * -x "node_modules/*" ".github/*"
 
       - name: Deploy to Elastic Beanstalk
         uses: einaregilsson/beanstalk-deploy@v22
