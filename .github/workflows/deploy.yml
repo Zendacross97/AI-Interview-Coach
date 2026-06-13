@@ -27,7 +27,3 @@ jobs:
           version_label: "deploy-${{ github.sha }}"
           region: "ap-south-1"
           deployment_package: deploy.zip
-          # This ensures your keys are kept in sync on the server
-          env_variable_overrides: |
-            IAM_USER_KEY=${{ secrets.AWS_ACCESS_KEY_ID }}
-            IAM_USER_SECRET=${{ secrets.AWS_SECRET_ACCESS_KEY }}
