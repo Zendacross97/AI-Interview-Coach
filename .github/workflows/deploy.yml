@@ -1,0 +1,33 @@
+name: Deploy to AWS Elastic Beanstalk
+
+on:
+  push:
+    branches:
+      - main  # This triggers the deploy whenever you push to your main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Generate Deployment Package
+        # We zip the project, excluding node_modules and the .github folder itself
+        run: zip -r deploy.zip . -x "*.git*" "node_modules/*" ".github/*"
+
+      - name: Deploy to Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: "Ai-Interview-Coach"
+          environment_name: "Ai-Interview-Coach-env"
+          version_label: "deploy-${{ github.sha }}"
+          region: "ap-south-1"
+          deployment_package: deploy.zip
+          # This ensures your keys are kept in sync on the server
+          env_variable_overrides: |
+            IAM_USER_KEY=${{ secrets.AWS_ACCESS_KEY_ID }}
+            IAM_USER_SECRET=${{ secrets.AWS_SECRET_ACCESS_KEY }}
