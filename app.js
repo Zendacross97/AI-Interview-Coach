@@ -32,10 +32,11 @@ app.use('/interview', interviewRoute);
 
 initWebSocketGateway(server); // Passes server target into your custom router engine setup
 
+const PORT = parseInt(process.env.PORT, 10) || 5000;
 mongoose.connect(process.env.MONGODB_URL)
 .then(res => {
-    server.listen(process.env.PORT, () => {
-        console.log(`Server is listening globally on port: ${process.env.PORT}`);
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server is listening globally on port: ${PORT}`);
     });
 })
 .catch(err => {
