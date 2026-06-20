@@ -2,16 +2,62 @@ const resumeService = require('../services/resumeService');
 const interviewSessionService = require('../services/interviewService');
 const geminiService = require('../services/geminiService');
 const userService = require('../services/userServices');
+const redisService = require('../services/redisService');
+
+const activeLiveTunnels = new Map();
 
 exports.handleSocketConnection = async (ws, request, user) => {
+    const userIdString = user._id.toString();
     console.log(`Real-time tunnel active for: ${user.name}`);
 
-    // Read parameters passed from the upgrade listener configuration object setup
+    if (activeLiveTunnels.has(userIdString)) {
+        console.log(`Handshake Blocked: ${user.name} attempted a true simultaneous connection.`);
+        ws.send(JSON.stringify({ error: "An active session connection is already open in another window or tab." }));
+        ws.close(4001);
+        return;
+    }
+
+    activeLiveTunnels.set(userIdString, ws);
+
     const { resumeId, roleType, difficulty } = ws.dynamicConfig;
-    const currentSession = await interviewSessionService.initializeSession(user._id, resumeId, roleType, difficulty);
     const resumeContext = await resumeService.getResumeContextForAI(user._id);
 
-    //Streams tokens from Gemini to Browser & DB
+    let currentSession = null;
+    let isReconnection = false;
+
+    try {
+        const existingSessionId = await redisService.getActiveSession(user._id.toString());
+
+        if (existingSessionId) {
+            console.log(`Active session footprint [${existingSessionId}] found in Redis. Initializing recovery flow...`);
+            currentSession = await interviewSessionService.getSessionById(existingSessionId);
+            
+            if (currentSession && currentSession.status === 'active') {
+                isReconnection = true;
+                ws.dynamicConfig.roleType = currentSession.roleType;
+                ws.dynamicConfig.difficulty = currentSession.difficulty;
+            }
+        }
+
+        if (!currentSession || currentSession.status !== 'active') {
+            if (existingSessionId) {
+                console.warn(`Stale tracking key found for user ${user._id} but no active document exists. Clearing Redis lock.`);
+                await redisService.removeActiveSession(user._id.toString());
+            }
+            console.log("No live session history cached. Constructing a fresh pipeline...");
+            currentSession = await interviewSessionService.initializeSession(user._id, resumeId, roleType, difficulty);
+        }
+
+    } catch (error) {
+        console.error("Critical error mapping session states:", error.message);
+        activeLiveTunnels.delete(userIdString);
+        if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ error: "System initialization failed. Please try again." }));
+            ws.close();
+        }
+        return;
+    }
+
     const streamToClient = async (session) => {
         let fullResponseText = "";
 
@@ -19,52 +65,45 @@ exports.handleSocketConnection = async (ws, request, user) => {
             const aiText = chunk.serverContent?.modelTurn?.parts?.[0]?.text;
             if (aiText) {
                 fullResponseText += aiText;
-                // Send to browser UI
                 ws.send(JSON.stringify({ sender: 'ai', text: aiText }));
-                // Persist to MongoDB
                 await interviewSessionService.logMessageToTranscript(currentSession._id, 'ai', aiText);
             }
         }
-        //Check if the AI wrapped up or failed the candidate
         const lowerText = fullResponseText.toLowerCase();
         if (
-            lowerText.includes("That concludes our interview") ||
+            lowerText.includes("this interview is concluded") ||
+            lowerText.includes("that concludes our interview") ||
             lowerText.includes("conclude the interview") || 
             lowerText.includes("thank you for your time") ||
             lowerText.includes("interview is over")
         ) {
-            console.log("AI triggered an explicit conclusion criteria. Closing real-time tunnel.");
-            
-            // Give the user 4 seconds to view the final text block while calculating scores
-            setTimeout(async () => {
-                try {
-                    // Calculate scores and finalize *before* closing the socket connection
-                    const updatedSession = await interviewSessionService.finalizeSession(currentSession._id, user._id, false);
-                    
-                    const candidateAnswers = updatedSession?.transcript.filter(turn => turn.sender === 'candidate') || [];
-                    if (candidateAnswers.length >= 1) {
-                        await userService.updateInterviewCount(user._id);
-                    }
+            console.log("AI triggered an explicit conclusion criteria. Closing real-time tunnel.");           
+            try {
+                const updatedSession = await interviewSessionService.finalizeSession(currentSession._id, user._id, false);
+                
+                const candidateAnswers = updatedSession?.transcript.filter(turn => turn.sender === 'candidate') || [];
+                if (candidateAnswers.length >= 1) {
+                    await userService.updateInterviewCount(user._id);
+                }
 
-                    // If the user hasn't closed their browser tab, dispatch the payload
-                    if (ws.readyState === ws.OPEN && updatedSession) {
-                        ws.send(JSON.stringify({
-                            type: 'SESSION_ENDED',
-                            overallScorecard: updatedSession.overallScorecard,
-                        }));
-                        
-                        console.log("Scorecard delivered successfully. Dropping socket tunnel.");
-                        ws.close();
-                    }
-                } catch (error) {
-                    console.error("Delayed finalization dispatch collapsed:", error.message);
+                if (ws.readyState === ws.OPEN && updatedSession) {
+                    const dynamicSessionPayload = updatedSession.toObject ? updatedSession.toObject() : updatedSession;
+                    ws.send(JSON.stringify({
+                        type: 'SESSION_ENDED',
+                        overallScorecard: updatedSession.overallScorecard,
+                        fullSessionDocument: dynamicSessionPayload
+                    }));
+                    
+                    console.log("Scorecard delivered successfully. Dropping socket tunnel.");
                     ws.close();
                 }
-            }, 4000);
+            } catch (error) {
+                console.error("Delayed finalization dispatch collapsed:", error.message);
+                ws.close();
+            }
         }
     };
 
-    // 2. Initialize Gemini Stream Session using Service
     let geminiSession = null;
     const MAX_RETRIES = 3;
     let attempt = 0;
@@ -74,9 +113,23 @@ exports.handleSocketConnection = async (ws, request, user) => {
             console.log(`Initializing Gemini Stream Session (Attempt ${attempt}/${MAX_RETRIES})...`);
             geminiSession = await geminiService.startLiveInterviewStream(resumeContext);
             
-            // Kick off the interview interaction if successful
-            await geminiSession.send({ text: `Hello! Please introduce yourself and start the interview for a ${difficulty} ${roleType} position.`});
-            await streamToClient(geminiSession);
+            if (isReconnection) {
+                console.log("Re-synchronizing previous history context into new Gemini stream pipeline...");
+                
+                ws.send(JSON.stringify({
+                    type: 'RECONNECTION_HISTORY',
+                    transcript: currentSession.transcript
+                }));
+
+                await geminiSession.send({ 
+                    text: `[SYSTEM CONNECTION RESTORED] The candidate was disconnected momentarily. Here is the exact history context of our ongoing interview conversation: ${JSON.stringify(currentSession.transcript)}. Please remain in your persona as 'Sharpener' and seamlessly resume by evaluating their last answer or asking your next intended question.`
+                });
+                
+                await streamToClient(geminiSession);
+            } else {
+                await geminiSession.send({ text: `Hello! Please introduce yourself and start the interview for a ${difficulty} ${roleType} position.`});
+                await streamToClient(geminiSession);
+            }
         } catch (err) {
             console.error(`Gemini Stream Bootstrap Attempt ${attempt} Failed:`, err.message);
             
@@ -84,19 +137,19 @@ exports.handleSocketConnection = async (ws, request, user) => {
             err.message.includes("503") || 
             err.message.includes("UNAVAILABLE") || 
             err.message.includes("fetch failed") || 
-            err.message.includes("undici"); // undici is the engine behind Node's fetch
+            err.message.includes("undici");
 
             if (isRetryable && attempt < MAX_RETRIES) {
-                const delayTime = attempt * 2000; // Increased delay to 2s, 4s
+                const delayTime = attempt * 2000;
                 console.warn(`Transient network/API error. Retrying in ${delayTime}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delayTime));
                 continue; 
             }            
-            console.log(`Retries exhausted or critical error reached on attempt ${attempt}. Shutting down cleanly...`);
-            try {
-                await interviewSessionService.finalizeSession(currentSession._id, user._id, true);
-            } catch (finalErr) {
-                console.error("Emergency session finalization crash:", finalErr.message);
+            console.log(`Retries exhausted on attempt ${attempt}. Dropping socket interface cleanly without altering state.`);
+
+            if (geminiSession) {
+                geminiSession.close();
+                geminiSession = null;
             }
 
             if (ws.readyState === ws.OPEN) {
@@ -111,7 +164,6 @@ exports.handleSocketConnection = async (ws, request, user) => {
     ws.on('pong', () => {
         ws.isAlive = true;
     });
-     // Send a "PING" every 30 seconds to the browser
     const heartbeatInterval = setInterval(() => {
         if (ws.isAlive === false) {
             console.log(`Ping timeout detected for ${user.name}. Closing connection connection cleanly.`);
@@ -120,20 +172,32 @@ exports.handleSocketConnection = async (ws, request, user) => {
         }
         
         ws.isAlive = false;
-        ws.ping(); // Built-in WebSocket frame ping
-    }, 30000); // 30 seconds
+        ws.ping();
+    }, 30000);
 
-    // UPSTREAM: Browser ➔ AI
     ws.on('message', async (messageBuffer) => {
         try {
             const rawMessage = messageBuffer.toString();
             const parsedData = JSON.parse(rawMessage);
+            if (parsedData.type === 'USER_EXPLICIT_QUIT') {
+                console.log(`User ${user.name} explicitly quit session.`);
+                
+                if (geminiSession) {
+                    geminiSession.close();
+                    geminiSession = null;
+                }
+
+                await interviewSessionService.finalizeSession(currentSession._id, user._id, true);
+
+                if (ws.readyState === ws.OPEN) {
+                    ws.close();
+                }
+                return;
+            }
             if (!parsedData.text) return;
 
-            // Log incoming answer to DB transcript right away
-            const updatedSessionWithCandidate = await interviewSessionService.logMessageToTranscript(currentSession._id, 'candidate', parsedData.text);
+            await interviewSessionService.logMessageToTranscript(currentSession._id, 'candidate', parsedData.text);
             
-            // Dispatch to Gemini and handle temporary stream drops dynamically
             try {
                 await geminiSession.send({ text: parsedData.text });
                 await streamToClient(geminiSession);
@@ -146,77 +210,52 @@ exports.handleSocketConnection = async (ws, request, user) => {
                         sender: 'ai', 
                         text: "[System Notice: The AI Interviewer has reached its maximum daily capacity. Please try again in 24 hours or upgrade your API plan.]" 
                     }));
-                    // Since we can't recover from a quota hit, we close the session
                     await interviewSessionService.finalizeSession(currentSession._id, user._id, true);
-                    ws.close();
-                    return;
-                }
-                const isTransientNetworkError = 
-                    errString.includes("503") || 
-                    errString.includes("UNAVAILABLE") || 
-                    errString.includes("FETCH FAILED") || 
-                    errString.includes("UNDICI");
-                
-                if (isTransientNetworkError) {
-                    // Alert the frontend user without closing the session socket pipe
-                    ws.send(JSON.stringify({ 
-                        sender: 'ai', 
-                        text: "[System Notice: The AI server experienced a momentary connection dropout. Please copy your last response and try sending it again in a few seconds.]" 
-                    }));
-                    try {
-                        console.log("Attempting mid-session stream recovery...");
-                        // 2. Safely close old broken connection stream
-                        if (geminiSession) geminiSession.close();
-                        
-                        // 3. Re-initialize a brand new session stream
-                        geminiSession = await geminiService.startLiveInterviewStream(resumeContext);
-                        
-                        // 4. Feed the current transcript history back into the new session so it has context
-                        const fullHistory = updatedSessionWithCandidate.transcript;
-                        await geminiSession.send({ 
-                            text: `SYSTEM RECOVERY NOTICE: The connection was reset. Here is the interview history so far: ${JSON.stringify(fullHistory)}. Please seamlessly resume the interview based on the last question asked or the candidate's last input.`
-                        });
 
-                        // 5. Stream the freshly generated response to the client
-                        await streamToClient(geminiSession);
-                        console.log("Mid-session recovery completed successfully.");
-                        
-                    } catch (recoveryError) {
-                        console.error("Stream recovery failed:", recoveryError.message);
-                        await interviewSessionService.finalizeSession(currentSession._id, user._id, true);
-                        ws.send(JSON.stringify({ error: "The AI server is experiencing an extended outage. Please click 'Start New Session'." }));
+                    if (ws.readyState === ws.OPEN) {
                         ws.close();
                     }
-                } else {
-                    await interviewSessionService.finalizeSession(currentSession._id, user._id, true);
-                    throw streamErr;
+                    return;
                 }
+            
+                ws.send(JSON.stringify({ 
+                    sender: 'ai', 
+                    text: "[System Notice: The AI server experienced a momentary connection dropout. Please copy your last response and try sending it again in a few seconds.]" 
+                }));
+                
+                console.log("Attempting mid-session stream recovery...");
+                if (geminiSession) geminiSession.close();
+                
+                geminiSession = await geminiService.startLiveInterviewStream(resumeContext);
+                
+                const freshSessionData = await interviewSessionService.getSessionById(currentSession._id);
+                await geminiSession.send({ 
+                    text: `SYSTEM RECOVERY NOTICE: The connection was reset. Here is the interview history so far: ${JSON.stringify(freshSessionData.transcript)}. Please seamlessly resume the interview based on the last question asked or the candidate's last input.`
+                });
+
+                await streamToClient(geminiSession);
+                console.log("Mid-session recovery completed successfully.");               
             }
         } catch (err) {
-            console.error("Critical Upstream routing failure:", err.message);
-            ws.send(JSON.stringify({ error: "Critical gateway failure. Session closing down." }));
-            ws.close();
+            console.error("Upstream processing breakdown exception:", err.message);
+            if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({ error: "Client-gateway transmission error. Start the interview again to resume from where you left." }));
+                ws.close();
+            }
         }
     });
 
-    // Cleanup when user exits or loses connection
     ws.on('close', async () => {
         console.log(`Pipeline session cleaning down for: ${user.name}`);
         clearInterval(heartbeatInterval);
-       try {
-            //check if the session hasn't been finalized yet
-            const activeSessionCheck = await interviewSessionService.getSessionById(currentSession._id);
-            if (activeSessionCheck && activeSessionCheck.status === 'active') {
-                const updatedSession = await interviewSessionService.finalizeSession(currentSession._id, user._id, false);
-                const candidateAnswers = updatedSession?.transcript.filter(turn => turn.sender === 'candidate') || [];
-                if (candidateAnswers.length >= 1) {
-                    await userService.updateInterviewCount(user._id);
-                }
-            }
-        } catch (evalError) {
-            console.error("Fallback disconnect cleanup tracker failed:", evalError.message);
+
+        if (activeLiveTunnels.get(userIdString) === ws) {
+            activeLiveTunnels.delete(userIdString);
         }
 
-        if (geminiSession) geminiSession.close();
+        if (geminiSession) {
+            geminiSession.close();
+            geminiSession = null;
+        }
     });
 };

@@ -1,5 +1,7 @@
 const AwsServices = require('../services/awsServices');
 const resumeService = require('../services/resumeService');
+const interviewService = require('../services/interviewService');
+const redisService = require('../services/redisService');
 const path = require('path');
 
 exports.getInterviewPage = (req, res) => {
@@ -33,15 +35,11 @@ exports.uploadresume = async (req, res) => {
         if (!req.user || !req.user._id) {
             return res.status(401).json({ error: 'User context missing. Authentication required.' });
         }
-         // Instead of waiting for a file buffer, we just need a name context.
-        // We create a unique name using the user's database ID.
+
         const filename = `resumes/${req.user._id}/resume.pdf`;
         
-        // Get our secure temporary uploading instructions from the service
         const { presignedUrl, s3FileUrl } = await AwsServices.getPresignedUploadUrl(filename);
 
-        // Send both back to the client. 
-        // The client uses 'presignedUrl' to upload, and your app tracks 's3FileUrl' in MongoDB
         res.status(200).json({ 
             uploadInstructionsUrl: presignedUrl, 
             permanentFileUrl: s3FileUrl,
@@ -63,5 +61,59 @@ exports.saveResumeMetadata = async (req, res) => {
         res.status(200).json({ message: 'Metadata logged successfully', resumeId: resumeRecord._id });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+};
+
+exports.getPreviousSessions = async (req, res) => {
+    try {
+        if (!req.user || req.user.order.status!=='SUCCESS') {
+            return res.status(403).json({ error: "User doesn't have premium subscription." });
+        }
+        const sessions = await interviewService.getLatestSevenCompletedSessions(req.user._id);
+        return res.status(200).json({ 
+            success: true, 
+            sessions: sessions 
+        });
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.validateSession = async (req, res) => {
+    try {
+        const { roleType, difficulty } = req.body;
+        const activeSessionId = await redisService.getActiveSession(req.user._id.toString());
+        if (!activeSessionId) {
+            return res.status(200).json({ status: 'PROCEED_CLEAN' });
+        }
+        const session = await interviewService.getSessionById(activeSessionId);
+        if (!session || session.status !== 'active') {
+            return res.status(200).json({ status: 'PROCEED_CLEAN' });
+        }
+        if (session.roleType === roleType && session.difficulty === difficulty) {
+            return res.status(200).json({ status: 'PROCEED_RESUME' });
+        }
+        return res.status(200).json({
+            status: 'CONFLICT',
+            previousRole: session.roleType,
+            previousDifficulty: session.difficulty
+        });
+    } catch (error) {
+        console.error("[VALIDATE SESSION API ERROR]:", error);
+        return res.status(500).json({ error: "Pre-flight handshake parameters mapping collapsed." });
+    }
+};
+
+exports.abandonSession = async (req, res) => {
+    try {
+        const activeSessionId = await redisService.getActiveSession(req.user._id.toString());
+        if (activeSessionId) {
+            await interviewService.finalizeSession(activeSessionId, req.user._id, true);
+            return res.status(200).json({ success: true, message: "Stale execution pipeline dropped cleanly." });
+        }
+    } catch (error) {
+        console.error("[ABANDON SESSION API ERROR]:", error);
+        return res.status(500).json({ error: "Forced reset operations sequence failed." });
     }
 };

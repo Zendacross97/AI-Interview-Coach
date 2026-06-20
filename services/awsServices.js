@@ -19,7 +19,6 @@ exports.getPresignedUploadUrl = async (filename) => {
     });
 
     try {
-        // Generate a URL that expires in 300 seconds (5 minutes)
         const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
         
         const s3FileUrl = `https://${BUCKET_NAME}.s3.amazonaws.com/${filename}`;

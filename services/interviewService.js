@@ -25,7 +25,6 @@ exports.initializeSession = async (userId, resumeId, roleType, difficulty) => {
         transcript: []
     });
     
-    // Map active session to Redis for lightning-fast tracking
     await redisService.setActiveSession(userId.toString(), currentSession._id.toString());
     return currentSession;
 };
@@ -50,21 +49,17 @@ exports.finalizeSession = async (sessionId, userId, sessionFailed) => {
     
     if (!sessionId) return null;
     try {
-        // 1. Fetch the complete transcript history captured so far
         const session = await InterviewSession.findById(sessionId);
         if (!session) return null;
 
-        // Fallback defaults if the session was killed instantly without technical depth
         let technicalScore = 0;
         let communicationScore = 0;
-        let aiSummaryFeedback = "Interview terminated early by candidate. Evaluation metrics could not be accurately calculated.";
+        let aiSummaryFeedback = "Interview got terminated early. Evaluation metrics could not be accurately calculated.";
 
-        // 2. Count candidate turns to avoid wasting API tokens on empty windows
         const candidateAnswers = session.transcript.filter(turn => turn.sender === 'candidate');
 
-        if (candidateAnswers.length >= 1) {
+        if (candidateAnswers.length >= 1 && sessionFailed === false) {
             try {
-                // 3. Request structured analytics directly from Gemini core
                 const evaluation = await geminiService.generateScorecard(session.transcript);
                 
                 technicalScore = evaluation.technicalScore;
@@ -92,3 +87,56 @@ exports.finalizeSession = async (sessionId, userId, sessionFailed) => {
     }
 };
 
+exports.cleanupAbandonedSessions = async (num) => {
+    const safetyThreshold = new Date(Date.now() - num * 60 * 60 * 1000);
+    try {
+        const result = await InterviewSession.updateMany(
+            {
+                status: 'active',
+                updatedAt: { $lt: safetyThreshold }
+            },
+            {
+                $set: {
+                    status: 'abandoned',
+                    endedAt: new Date(),
+                    'overallScorecard.aiSummaryFeedback': "Session expired due to candidate prolonged inactivity."
+                }
+            }
+        );
+        return result.modifiedCount;
+    } catch (error) {
+        console.error("Error cleaning up abandoned sessions:", error.message);
+        throw error;
+    }
+};
+
+exports.purgeSessionsOlderThanDays = async (daysOld) => {
+    const boundaryDate = new Date();
+    boundaryDate.setDate(boundaryDate.getDate() - daysOld);
+
+    try {
+        const result = await InterviewSession.deleteMany({
+            createdAt: { $lt: boundaryDate }
+        });
+        
+        return result.deletedCount;
+    } catch (error) {
+        console.error(`[PURGE SERVICE ERROR] Failed to drop sessions older than ${daysOld} days:`, error.message);
+        throw error;
+    }
+};
+
+exports.getLatestSevenCompletedSessions = async (userId) => {
+    try {
+        return await InterviewSession.find({
+            userId,
+            status: 'completed'
+        })
+        .sort({ endedAt: -1, createdAt: -1 })
+        .limit(7)
+        .lean();
+    } catch (error) {
+        console.error(`Error getting latest completed sessionss:`, error.message);
+        throw error;
+    }
+};

@@ -3,11 +3,11 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-const http = require('http'); // Native Node module
+const http = require('http');
 const { initWebSocketGateway } = require('./ws');
 
 const app = express();
-const server = http.createServer(app); // Wrap Express app inside a standard HTTP server
+const server = http.createServer(app);
 
 const userRoute = require('./routes/userRoutes');
 const paymentRoute = require('./routes/paymentRoute');
@@ -30,7 +30,8 @@ app.use('/password', userRoute);
 app.use('/payment', paymentRoute);
 app.use('/interview', interviewRoute);
 
-initWebSocketGateway(server); // Passes server target into your custom router engine setup
+initWebSocketGateway(server);
+require('./cron/sessionCleanup');
 
 const PORT = parseInt(process.env.PORT, 10) || 5000;
 mongoose.connect(process.env.MONGODB_URL)

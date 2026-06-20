@@ -9,19 +9,16 @@ exports.getResumeData = async (userId) => {
 exports.updateResume = async (userId, s3Key, s3Url) => {
     try {
         console.log(`[Ingestion Core] Commencing resume process sync pipeline for User: ${userId}`);
-        // 1. Fetch the PDF from S3 immediately
         const buffer = await awsService.getResumeBuffer(s3Key);
 
-        // 2. Extract Text and Skills via Gemini
         const { markdown, skills } = await geminiService.parseResumeDirectly(buffer);
         
-        // 3. Upsert to DB with the REAL data
         const updatedRecord = await Resume.findOneAndUpdate(
             { userId },
             {
                 s3Key,
                 s3Url,
-                parsedText: markdown, // Will be parsed later via Gemini
+                parsedText: markdown,
                 skillsTracked: skills
             },
             { upsert: true, returnDocument: 'after' }

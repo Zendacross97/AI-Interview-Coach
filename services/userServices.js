@@ -37,7 +37,6 @@ exports.createUser = async (name, email, passwordHash) => {
 
 exports.createUuid = async (uuid, userId) => {
   try {
-    // update the password field for the given user
     return await User.findByIdAndUpdate(
       userId,
       {

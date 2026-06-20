@@ -10,13 +10,13 @@ exports.createOrder = async (
     customerPhone = "8474090589"
 ) => {
     try {
-        const expiryDate = new Date(Date.now() + 60 * 60 * 1000);// 1 hour from now
+        const expiryDate = new Date(Date.now() + 60 * 60 * 1000);
         const formattedExpiryDate = expiryDate.toISOString();
 
         const request = {
             order_amount: orderAmount,
             order_currency: orderCurrency,
-            order_id: `${userId}_${Date.now()}`,// Unique order ID
+            order_id: `${userId}_${Date.now()}`,
             customer_details: {
                 customer_id: customerId,
                 customer_phone: customerPhone

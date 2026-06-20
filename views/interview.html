@@ -50,6 +50,16 @@
             <button id="startInterviewBtn" class="success-btn">Start Live AI Interview</button>
         </div>
 
+        <div class="premium-history-section" id="premiumHistorySection">
+            <button id="viewHistoryBtn" class="secondary-btn">
+                View Previous Sessions (Last 7 Days / Max 7 Completed)
+            </button>
+            
+            <div id="historyScrollBox" class="history-scroll-box">
+                <div id="historyItemsContainer"></div>
+            </div>
+        </div>
+
         <div id="chatBox" class="chat-box">
             <div id="chatLog" class="chat-log"></div>
             <div class="chat-input-area">
@@ -76,6 +86,28 @@
                 <p id="aiFeedbackDisplay">Processing your feedback...</p>
             </div>
             <button onclick="location.reload()" class="secondary-btn">Start New Session</button>
+        </div>
+    </div>
+
+    <div id="sessionConflictModal" class="conflict-modal-overlay">
+        <div class="conflict-modal-content">
+            <h3>Incomplete Session Found</h3>
+            <p>You have an unfinished active interview session saved on record. However, your current configuration parameters don't match:</p>
+            
+            <div class="conflict-details-box">
+                <strong>Previous Settings:</strong>
+                <p>• Job Role: <span id="prevRoleText" class="conflict-highlight-text">-</span></p>
+                <p>• Difficulty: <span id="prevDiffText" class="conflict-highlight-text">-</span></p>
+            </div>
+            
+            <p class="conflict-notice-subtext">
+                Choose how you would like to proceed with your calibration workspace:
+            </p>
+            
+            <div class="conflict-actions">
+                <button id="btnContinuePrevious" class="success-btn">Continue Previous</button>
+                <button id="btnStartNewConflict" class="danger-btn">Start New</button>
+            </div>
         </div>
     </div>
 

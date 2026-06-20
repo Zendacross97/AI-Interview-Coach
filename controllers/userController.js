@@ -112,23 +112,19 @@ const updatePassword = async (req, res) => {
         if (!password || !confirmPassword) {
             return res.status(400).json({ error: 'Password credential is incomplete' });
         }
-        if (password !== confirmPassword) { //confirm password
+        if (password !== confirmPassword) { 
             return res.status(400).json({ error: 'Password and confirm password do not match' });
         }
-        const resetDetails = await UserServices.getUuid(uuid); // Using the service to fetch UUID details
+        const resetDetails = await UserServices.getUuid(uuid); 
         
-        // Check if user exists
         if (!resetDetails) {
             return res.status(404).json({ error: 'User not found or reset link invalid' });
         }
 
-        // hash new password
         const hash = await bcrypt.hash(password, 10);
 
-        // update user password
         await UserServices.updateUserPassword(hash, resetDetails._id);
 
-        // clear/reset UUID status
         await UserServices.updateUuidStatus(uuid);
 
         res.status(200).json({ message: 'Password updated successfully' });

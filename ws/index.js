@@ -1,5 +1,5 @@
 const { WebSocketServer } = require('ws');
-const url = require('url'); // Native Node utility
+const url = require('url');
 const { authenticateSocketUpgrade } = require('./middleware');
 const { handleSocketConnection } = require('./handler');
 
@@ -9,17 +9,14 @@ const ALLOWED_ROLES = ['Full Stack Engineer', 'Backend Developer', 'Frontend Dev
 const ALLOWED_DIFFICULTIES = ['Junior', 'Mid', 'Senior/Staff'];
 
 exports.initWebSocketGateway = (httpServer) => {
-    // Initialize the cluster attached directly onto our existing HTTP server instance
     wss = new WebSocketServer({ noServer: true });
 
-    // Intercept standard HTTP network layer upgrade requests
     httpServer.on('upgrade', async (request, socket, head) => {
         const authContext = await authenticateSocketUpgrade(request, socket);
         if (!authContext) return; 
 
         const { user, token } = authContext;
 
-        // Parse query parameter strings from incoming request target URL references
         const parsedUrl = url.parse(request.url, true);
         const { resumeId, roleType, difficulty } = parsedUrl.query;
 
@@ -42,14 +39,12 @@ exports.initWebSocketGateway = (httpServer) => {
         }
 
         wss.handleUpgrade(request, socket, head, (ws) => {
-            // Re-assign active protocol assignment metadata signature back to internal client layers
             ws.protocol = token; 
             ws.dynamicConfig = { resumeId, roleType, difficulty };
             wss.emit('connection', ws, request, user);
         });
     });
 
-    // Register our events to listen once structural upgrade handshakes clear out
     wss.on('connection', (ws, request, user) => {
         handleSocketConnection(ws, request, user);
     });

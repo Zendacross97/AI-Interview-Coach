@@ -1,10 +1,10 @@
 const jwt = require('jsonwebtoken');
 const User = require('../model/user');
 const InterviewSession = require('../model/interview');
+const redisService = require('../services/redisService');
 
 exports.authenticateSocketUpgrade = async (request, socket) => {
   try {
-    // Extract token from the subprotocol header sent by the client browser
     const token = request.headers['sec-websocket-protocol'];
     if (!token) {
       console.log("Socket Upgrade Blocked: Missing subprotocol JWT payload.");
@@ -37,7 +37,6 @@ exports.authenticateSocketUpgrade = async (request, socket) => {
       }
     }
 
-    // Return user context if all safety checkpoints pass successfully
     return { user, token };
   } catch (err) {
     console.error('Socket Handshake Auth error:', err.message);
