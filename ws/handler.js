@@ -105,59 +105,32 @@ exports.handleSocketConnection = async (ws, request, user) => {
     };
 
     let geminiSession = null;
-    const MAX_RETRIES = 3;
-    let attempt = 0;
-    while (attempt < MAX_RETRIES && !geminiSession) {
-        try {
-            attempt++;
-            console.log(`Initializing Gemini Stream Session (Attempt ${attempt}/${MAX_RETRIES})...`);
-            geminiSession = await geminiService.startLiveInterviewStream(resumeContext);
+
+    try {
+        console.log("Initializing baseline Gemini Stream Session...");
+        geminiSession = await geminiService.startLiveInterviewStream(resumeContext);
+        
+        if (isReconnection) {
+            console.log("Re-synchronizing previous history context into new Gemini stream pipeline...");
             
-            if (isReconnection) {
-                console.log("Re-synchronizing previous history context into new Gemini stream pipeline...");
-                
-                ws.send(JSON.stringify({
-                    type: 'RECONNECTION_HISTORY',
-                    transcript: currentSession.transcript
-                }));
+            ws.send(JSON.stringify({
+                type: 'RECONNECTION_HISTORY',
+                transcript: currentSession.transcript
+            }));
 
-                await geminiSession.send({ 
-                    text: `[SYSTEM CONNECTION RESTORED] The candidate was disconnected momentarily. Here is the exact history context of our ongoing interview conversation: ${JSON.stringify(currentSession.transcript)}. Please remain in your persona as 'Sharpener' and seamlessly resume by evaluating their last answer or asking your next intended question.`
-                });
-                
-                await streamToClient(geminiSession);
-            } else {
-                await geminiSession.send({ text: `Hello! Please introduce yourself and start the interview for a ${difficulty} ${roleType} position.`});
-                await streamToClient(geminiSession);
-            }
-        } catch (err) {
-            console.error(`Gemini Stream Bootstrap Attempt ${attempt} Failed:`, err.message);
+            await geminiSession.send({ 
+                text: `[SYSTEM CONNECTION RESTORED] The candidate was disconnected momentarily. Here is the exact history context of our ongoing interview conversation: ${JSON.stringify(currentSession.transcript)}. Please remain in your persona as 'Sharpener' and seamlessly resume by evaluating their last answer or asking your next intended question.`
+            });
             
-           const isRetryable = 
-            err.message.includes("503") || 
-            err.message.includes("UNAVAILABLE") || 
-            err.message.includes("fetch failed") || 
-            err.message.includes("undici");
-
-            if (isRetryable && attempt < MAX_RETRIES) {
-                const delayTime = attempt * 2000;
-                console.warn(`Transient network/API error. Retrying in ${delayTime}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delayTime));
-                continue; 
-            }            
-            console.log(`Retries exhausted on attempt ${attempt}. Dropping socket interface cleanly without altering state.`);
-
-            if (geminiSession) {
-                geminiSession.close();
-                geminiSession = null;
-            }
-
-            if (ws.readyState === ws.OPEN) {
-                ws.send(JSON.stringify({ error: "The AI interviewer is currently facing high capacity demands. Please wait a moment and click 'Start' again." }));
-                ws.close();
-            }
-            return;
+            await streamToClient(geminiSession);
+        } else {
+            await geminiSession.send({ text: `Hello! Please introduce yourself and start the interview for a ${difficulty} ${roleType} position.`});
+            await streamToClient(geminiSession);
         }
+    } catch (err) {
+        console.error("Baseline Gemini boot failed:", err.message);
+        geminiSession = await handleGeminiCrash(err, ws, currentSession, resumeContext, geminiSession);
+        return;
     }
 
     ws.isAlive = true;
@@ -201,40 +174,8 @@ exports.handleSocketConnection = async (ws, request, user) => {
             try {
                 await geminiSession.send({ text: parsedData.text });
                 await streamToClient(geminiSession);
-            } catch (streamErr) {
-                console.error("Mid-stream connection error:", streamErr.message);
-
-                const errString = streamErr.message.toUpperCase();
-                if (errString.includes("429") || errString.includes("RESOURCE_EXHAUSTED")) {
-                    ws.send(JSON.stringify({ 
-                        sender: 'ai', 
-                        text: "[System Notice: The AI Interviewer has reached its maximum daily capacity. Please try again in 24 hours or upgrade your API plan.]" 
-                    }));
-                    await interviewSessionService.finalizeSession(currentSession._id, user._id, true);
-
-                    if (ws.readyState === ws.OPEN) {
-                        ws.close();
-                    }
-                    return;
-                }
-            
-                ws.send(JSON.stringify({ 
-                    sender: 'ai', 
-                    text: "[System Notice: The AI server experienced a momentary connection dropout. Please copy your last response and try sending it again in a few seconds.]" 
-                }));
-                
-                console.log("Attempting mid-session stream recovery...");
-                if (geminiSession) geminiSession.close();
-                
-                geminiSession = await geminiService.startLiveInterviewStream(resumeContext);
-                
-                const freshSessionData = await interviewSessionService.getSessionById(currentSession._id);
-                await geminiSession.send({ 
-                    text: `SYSTEM RECOVERY NOTICE: The connection was reset. Here is the interview history so far: ${JSON.stringify(freshSessionData.transcript)}. Please seamlessly resume the interview based on the last question asked or the candidate's last input.`
-                });
-
-                await streamToClient(geminiSession);
-                console.log("Mid-session recovery completed successfully.");               
+            } catch (streamErr) { 
+                geminiSession = await handleGeminiCrash(streamErr, ws, currentSession, resumeContext, geminiSession);            
             }
         } catch (err) {
             console.error("Upstream processing breakdown exception:", err.message);
@@ -258,4 +199,82 @@ exports.handleSocketConnection = async (ws, request, user) => {
             geminiSession = null;
         }
     });
+
+    async function handleGeminiCrash(error, ws, currentSession, resumeContext, currentGeminiSession) {
+        const errString = error.message ? error.message.toUpperCase() : String(error).toUpperCase();
+        console.error(`[Gemini Intercept Exception]: ${error.message || error}`);
+
+        if (errString.includes("429") || errString.includes("RESOURCE_EXHAUSTED")) {
+            if (currentGeminiSession) currentGeminiSession.close();
+            if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({ 
+                    sender: 'ai', 
+                    text: "[System Notice: The AI Interviewer has reached its maximum daily capacity. Please try again in 24 hours.]" 
+                }));
+            }
+            
+            await interviewSessionService.finalizeSession(currentSession._id, user._id, true);
+
+            if (ws.readyState === ws.OPEN) {
+                if (activeLiveTunnels.get(userIdString) === ws) {
+                    activeLiveTunnels.delete(userIdString);
+                }
+                ws.close(4002);
+            }
+            return null;
+        }
+        if ( errString.includes("503") || errString.includes("UNAVAILABLE") ) {
+            if (currentGeminiSession) currentGeminiSession.close();
+            if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({ 
+                    sender: 'ai', 
+                    text: "[System Notice: The AI Interviewer is currently experiencing an overwhelming surge in global traffic. Please try starting your mock session later within 2 hrs.]" 
+                }));
+            }
+            
+            if (ws.readyState === ws.OPEN) {
+                if (activeLiveTunnels.get(userIdString) === ws) {
+                    activeLiveTunnels.delete(userIdString);
+                }
+                ws.close(4002);
+            }
+            return null;
+        }
+
+        if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ 
+                sender: 'ai', 
+                text: "[System Notice: The AI server experienced a momentary connection dropout.]" 
+            }));
+        }
+
+        console.log("Executing uniform stream recovery...");
+        if (currentGeminiSession) {
+            try { currentGeminiSession.close(); } catch (_) {}
+        }
+
+        try {
+            const newGeminiSession = await geminiService.startLiveInterviewStream(resumeContext);         
+            const freshSessionData = await interviewSessionService.getSessionById(currentSession._id);
+            const activeTranscript = freshSessionData?.transcript || currentSession.transcript || [];
+
+            await newGeminiSession.send({ 
+                text: `SYSTEM RECOVERY NOTICE: The connection was reset. Here is the interview history so far: ${JSON.stringify(activeTranscript)}. Please seamlessly resume the interview based on the last question asked or your last input.`
+            });
+
+            await streamToClient(newGeminiSession);
+            console.log("Stream recovery executed successfully.");
+            return newGeminiSession;
+        } catch (recoveryErr) {
+            console.error("Critical: Stream recovery link collapsed permanently:", recoveryErr.message);
+            if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({ error: "Client-gateway transmission error. Start the interview again to resume from where you left." }));
+                 if (activeLiveTunnels.get(userIdString) === ws) {
+                    activeLiveTunnels.delete(userIdString);
+                }
+                ws.close(4003);
+            }
+            return null;
+        }
+    }
 };

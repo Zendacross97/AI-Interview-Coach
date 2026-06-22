@@ -326,7 +326,9 @@ function initializeWebSocketSession() {
         document.getElementById('difficultySelect').disabled = true;
         document.getElementById('endSessionBtn').style.display = 'inline-block';
         document.getElementById('chatInput').disabled = false;
+        document.getElementById('chatInput').placeholder = "";
         document.getElementById('sendMsgBtn').disabled = false;
+        document.getElementById('micBtn').disabled = false;
     };
 
     socket.onmessage = (event) => {
@@ -404,10 +406,22 @@ function initializeWebSocketSession() {
                 document.getElementById('chatBox').style.display = 'none';
                 document.getElementById('startInterviewBtn').disabled = false;
             }, 4000)
-        } else if (event.code === 1006 || event.code === 1011) {
-            appendChatMessage('System', 'The connection dropped unexpectedly while shifting pipeline environments. Attempting to clear active loops...');
+        } else if (event.code === 4002) {
+            document.getElementById('chatInput').placeholder = "Quota Exhausted.";
+            appendChatMessage('System', 'Your interview session is closing in 3 secs...');
+            setTimeout(() => {
+                document.getElementById('chatBox').style.display = 'none';
+                document.getElementById('startInterviewBtn').disabled = false;
+            }, 4000);
+        } else if (event.code === 4003 || event.code === 1006 || event.code === 1011) {
+            document.getElementById('chatInput').placeholder = "Connection reset.";
+            appendChatMessage('System', 'The connection dropped unexpectedly while shifting pipeline environments.');
+            appendChatMessage('System', 'Your interview session is closing in 3 secs...');
             alert("A momentary connection reset occurred while reclaiming your workspace. Please click 'Start Live AI Interview' once more to complete connection mapping.");
-            document.getElementById('startInterviewBtn').disabled = false;
+            setTimeout(() => {
+                document.getElementById('chatBox').style.display = 'none';
+                document.getElementById('startInterviewBtn').disabled = false;
+            }, 4000);
         }
         else if (event.code === 4001) {
             alert("An active session is already running in another workspace interface tab.");
